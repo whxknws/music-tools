@@ -68,11 +68,26 @@ class ChordApp(tk.Tk):
         self._pulse_count: int = 0   # counts pulses so we can rate-limit display updates
         self._chords: list = []
         self._halfstep_shifts: list[int] = []
+        self._locks: dict[str, tk.BooleanVar] = {}
 
         self._build_ui()
         self._setup_midi()
         self._on_mood_change()
         self.protocol("WM_DELETE_WINDOW", self.destroy)
+
+    def _add_lock(self, row: int, key: str) -> None:
+        """Add a 🔓/🔒 toggle button in column 2 for the given parameter key."""
+        var = tk.BooleanVar(value=False)
+        self._locks[key] = var
+
+        def _toggle():
+            var.set(not var.get())
+            btn.config(text="🔒" if var.get() else "🔓")
+
+        btn = tk.Button(self, text="🔓", command=_toggle,
+                        relief="flat", font=("", 14), cursor="hand2",
+                        bd=0, highlightthickness=0)
+        btn.grid(row=row, column=2, padx=(0, 10), sticky="w")
 
     def _build_ui(self) -> None:
         pad = {"padx": 16, "pady": 6}
@@ -89,6 +104,7 @@ class ChordApp(tk.Tk):
             state="readonly", width=30,
         ).grid(row=1, column=1, sticky="w", **pad)
         self.key_var.trace_add("write", lambda *_: self._refresh())
+        self._add_lock(1, "key")
 
         # Mood
         ttk.Label(self, text="Mood:").grid(row=2, column=0, sticky="e", **pad)
@@ -98,6 +114,7 @@ class ChordApp(tk.Tk):
             state="readonly", width=30,
         ).grid(row=2, column=1, sticky="w", **pad)
         self.mood_var.trace_add("write", lambda *_: self._on_mood_change())
+        self._add_lock(2, "mood")
 
         # Progression
         ttk.Label(self, text="Progression:").grid(row=3, column=0, sticky="e", **pad)
@@ -107,6 +124,7 @@ class ChordApp(tk.Tk):
         )
         self._prog_combo.grid(row=3, column=1, sticky="w", **pad)
         self.prog_var.trace_add("write", lambda *_: self._refresh())
+        self._add_lock(3, "prog")
 
         # Tempo
         ttk.Label(self, text="Tempo:").grid(row=4, column=0, sticky="e", **pad)
@@ -116,6 +134,7 @@ class ChordApp(tk.Tk):
             state="readonly", width=30,
         ).grid(row=4, column=1, sticky="w", **pad)
         self.tempo_var.trace_add("write", lambda *_: self._refresh())
+        self._add_lock(4, "tempo")
 
         # Chord type
         ttk.Label(self, text="Chord type:").grid(row=5, column=0, sticky="e", **pad)
@@ -126,6 +145,7 @@ class ChordApp(tk.Tk):
             state="readonly", width=30,
         ).grid(row=5, column=1, sticky="w", **pad)
         self.chord_type_var.trace_add("write", lambda *_: self._refresh())
+        self._add_lock(5, "chord_type")
 
         # Rhythm pattern
         ttk.Label(self, text="Rhythm:").grid(row=7, column=0, sticky="e", **pad)
@@ -136,6 +156,7 @@ class ChordApp(tk.Tk):
             state="readonly", width=30,
         ).grid(row=7, column=1, sticky="w", **pad)
         self.rhythm_var.trace_add("write", lambda *_: self._refresh())
+        self._add_lock(7, "rhythm")
 
         # Velocity variation
         ttk.Label(self, text="Velocity variation:").grid(row=8, column=0, sticky="e", **pad)
@@ -145,6 +166,7 @@ class ChordApp(tk.Tk):
             values=["Off", "Subtle (±8)", "Medium (±15)", "Strong (±25)"],
             state="readonly", width=30,
         ).grid(row=8, column=1, sticky="w", **pad)
+        self._add_lock(8, "vel_var")
 
         # Strum
         ttk.Label(self, text="Strum:").grid(row=9, column=0, sticky="e", **pad)
@@ -162,6 +184,7 @@ class ChordApp(tk.Tk):
             ],
             state="readonly", width=30,
         ).grid(row=9, column=1, sticky="w", **pad)
+        self._add_lock(9, "strum")
 
         # Chromatic variation toggle
         self.halfstep_var = tk.BooleanVar(value=False)
@@ -194,11 +217,11 @@ class ChordApp(tk.Tk):
         self._play_btn.pack(side="left", padx=6)
         ttk.Button(btn_frame, text="■  Stop", command=self._stop, width=13).pack(side="left", padx=6)
 
-        ttk.Button(self, text="Export .mid", command=self._export, width=34).grid(
+        ttk.Button(self, text="🎲  Randomize", command=self._randomize, width=34).grid(
             row=14, column=0, columnspan=2, pady=(2, 4)
         )
 
-        ttk.Button(self, text="🎲  Randomize", command=self._randomize, width=34).grid(
+        ttk.Button(self, text="Export .mid", command=self._export, width=34).grid(
             row=15, column=0, columnspan=2, pady=(0, 10)
         )
 
@@ -256,17 +279,28 @@ class ChordApp(tk.Tk):
         return result
 
     def _randomize(self) -> None:
-        self.key_var.set(random.choice(BEGINNER_KEYS))
-        self.mood_var.set(random.choice(MOODS)[0])
-        self.prog_var.set(random.choice(self._prog_combo["values"]))
-        self.tempo_var.set(random.choice(TEMPOS)[0])
-        self.chord_type_var.set(random.choice(["Triads", "Seventh chords", "9th chords"]))
-        self.rhythm_var.set(random.choice(RHYTHM_PATTERNS)[0])
-        self.vel_var_var.set(random.choice(["Off", "Subtle (±8)", "Medium (±15)", "Strong (±25)"]))
-        self.strum_var.set(random.choice([
-            "Off", "Up — Slow", "Up — Medium", "Up — Fast",
-            "Down — Slow", "Down — Medium", "Down — Fast",
-        ]))
+        def locked(key: str) -> bool:
+            return self._locks.get(key, tk.BooleanVar()).get()
+
+        if not locked("key"):
+            self.key_var.set(random.choice(BEGINNER_KEYS))
+        if not locked("mood"):
+            self.mood_var.set(random.choice(MOODS)[0])
+        if not locked("prog"):
+            self.prog_var.set(random.choice(self._prog_combo["values"]))
+        if not locked("tempo"):
+            self.tempo_var.set(random.choice(TEMPOS)[0])
+        if not locked("chord_type"):
+            self.chord_type_var.set(random.choice(["Triads", "Seventh chords", "9th chords"]))
+        if not locked("rhythm"):
+            self.rhythm_var.set(random.choice(RHYTHM_PATTERNS)[0])
+        if not locked("vel_var"):
+            self.vel_var_var.set(random.choice(["Off", "Subtle (±8)", "Medium (±15)", "Strong (±25)"]))
+        if not locked("strum"):
+            self.strum_var.set(random.choice([
+                "Off", "Up — Slow", "Up — Medium", "Up — Fast",
+                "Down — Slow", "Down — Medium", "Down — Fast",
+            ]))
         if self.halfstep_var.get():
             # Each chord: 40% chance of shifting up, 40% down, 20% unchanged
             n = len(self._chords) or 4
